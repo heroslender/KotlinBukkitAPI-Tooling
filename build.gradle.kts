@@ -1,7 +1,16 @@
+import org.jetbrains.kotlin.gradle.tasks.KotlinCompile
+
+fun properties(key: String) = project.findProperty(key).toString()
+
 plugins {
-    id("org.jetbrains.intellij") version "0.4.21"
+    // Java support
     java
+    // Kotlin support
     kotlin("jvm") version "1.4.0"
+    // Gradle IntelliJ Plugin
+    id("org.jetbrains.intellij") version "0.4.21"
+    // Gradle Changelog Plugin
+    id("org.jetbrains.changelog") version "1.1.2"
 }
 
 val kotlinVersion = "1.4.0"
@@ -11,6 +20,7 @@ val bukkriptVersion = "0.2.0-SNAPSHOT"
 group = "br.com.devsrsouza.kotlinbukkitapi"
 version = "0.0.7"
 
+// Dependencies
 repositories {
     jcenter()
     mavenLocal()
@@ -26,33 +36,50 @@ dependencies {
     testCompile("junit", "junit", "4.12")
 }
 
-// See https://github.com/JetBrains/gradle-intellij-plugin/
+// Configure Gradle IntelliJ Plugin - read more: https://github.com/JetBrains/gradle-intellij-plugin
 intellij {
-    version = "2020.2.1"
+    pluginName = properties("pluginName")
+    version = properties("platformVersion")
+    type = properties("platformType")
 
-    setPlugins("java", "Kotlin")
+    // Plugin Dependencies. Uses `platformPlugins` property from the gradle.properties file.
+    setPlugins(
+        *properties("platformPlugins")
+            .split(',')
+            .map(String::trim)
+            .filter(String::isNotEmpty)
+            .toTypedArray()
+    )
 }
-
-configure<JavaPluginConvention> {
-    sourceCompatibility = JavaVersion.VERSION_1_8
+// Configure Gradle Changelog Plugin - read more: https://github.com/JetBrains/gradle-changelog-plugin
+changelog {
+    version = properties("pluginVersion")
+    groups = emptyList()
 }
 
 tasks {
-    compileKotlin {
-        kotlinOptions.jvmTarget = "1.8"
+    // Set the JVM compatibility versions
+    properties("javaVersion").let {
+        withType<JavaCompile> {
+            sourceCompatibility = it
+            targetCompatibility = it
+        }
+        withType<KotlinCompile> {
+            kotlinOptions.jvmTarget = it
+        }
     }
-    compileTestKotlin {
-        kotlinOptions.jvmTarget = "1.8"
-    }
-    publishPlugin {
-        token(System.getenv("ORG_GRADLE_PROJECT_intellijPublishToken"))
-    }
-}
-tasks.getByName<org.jetbrains.intellij.tasks.PatchPluginXmlTask>("patchPluginXml") {
-    sinceBuild("201")
-    untilBuild("213.*")
 
-    pluginDescription("""
+    wrapper {
+        gradleVersion = properties("gradleVersion")
+    }
+
+    patchPluginXml {
+        setVersion(properties("pluginVersion"))
+        setSinceBuild(properties("pluginSinceBuild"))
+        setUntilBuild(properties("pluginUntilBuild"))
+
+        setPluginDescription(
+            """
         <img src="https://github.com/DevSrSouza/KotlinBukkitAPI/raw/master/logo.png" width="417" height="161"/>
         
         <br />
@@ -82,38 +109,19 @@ tasks.getByName<org.jetbrains.intellij.tasks.PatchPluginXmlTask>("patchPluginXml
         <br />
         
         <img src="https://i.imgur.com/exlwVUs.gif" width='680' height='390'/>
-    """.trimIndent())
+    """.trimIndent()
+        )
 
+        setChangeNotes(
+            changelog.run {
+                kotlin.runCatching { get(properties("pluginVersion")) }.getOrElse { getLatest() }
+            }.toHTML()
+        )
+    }
 
-    changeNotes("""
-        <h3>0.0.6</h3>
-        <br />
-        
-        <ul>
-        <li>Update the embedded version of Bukkript and KotlinBukkitAPI.</li>
-        <li>Adding KotlinBukkitAPI 0.2.0-SNAPSHOT to the Project Wizard.</li>
-        <li>Improving overall performance of Menu Preview.</li>
-        </ul>
-        
-        <h3>0.0.5</h3>
-        <br />
-        
-        <ul>
-        <li>Menu Preview support for 1.13+ Material enum.</li>
-        <li>Increase Menu Preview performance</li>
-        </ul>
-        
-        <br />
-        
-        <h3>0.0.3</h3>
-        <br />
-        
-        <ul>
-        <li>KotlinBukkitAPI Project Wizard</li>
-        <li>Menu Preview tab only avaiable on projects that was KotlinBukkitAPI or is a Bukkript script.</li>
-        <li>Custom folder icons for highlight the Bukkript related folders.</li>
-        </ul>
-    """.trimIndent())
+    publishPlugin {
+        token(System.getenv("ORG_GRADLE_PROJECT_intellijPublishToken"))
+    }
 }
 
 configurations.all {
